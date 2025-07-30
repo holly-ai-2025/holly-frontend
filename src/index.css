@@ -1,0 +1,44 @@
+/* 🧠 Tailwind First Setup */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🪄 Global Styling Overrides */
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #89bacb;
+  color: #d8d1d1;
+}
+
+/* 💬 Input Bar Styles */
+.input-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+.input-bar input {
+  flex: 1;
+  padding: 0.75rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #2a2a2a;
+  color: white;
+}
+
+.input-bar button {
+  padding: 0.75rem 1.2rem;
+  background: #646cff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.input-bar button:hover {
+  background: #68C4E4;
+}
