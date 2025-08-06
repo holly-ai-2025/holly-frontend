@@ -4,6 +4,7 @@ import InputBox from "./InputBox";
 import hollyLogo from "../assets/logo.png";
 import useVoiceRecorder from "../hooks/useVoiceRecorder";
 import { fetchLLMResponse } from "../api/llm";
+import { playVoice, stopVoice } from "../api/tts";
 
 interface Message {
   role: "user" | "assistant";
@@ -14,6 +15,7 @@ const LeftPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [mode, setMode] = useState<"text" | "voice">("text");
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Handle STT return → same handler as text input
   const handleSend = (input: string) => {
@@ -31,6 +33,7 @@ const LeftPanel = () => {
           content: reply,
         };
         setMessages((prev) => [...prev, hollyReply]);
+        playVoice(reply, () => setIsSpeaking(true), () => setIsSpeaking(false));
       })
       .catch(() => {
         const hollyReply = {
@@ -46,6 +49,11 @@ const LeftPanel = () => {
 
   const toggleMode = () => {
     setMode((prev) => (prev === "text" ? "voice" : "text"));
+  };
+
+  const handleStop = () => {
+    stopVoice();
+    setIsSpeaking(false);
   };
 
   // Voice recorder setup (enabled only in voice mode)
@@ -79,6 +87,19 @@ const LeftPanel = () => {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [mode, isRecording]);
+
+  // Stop playback on Esc or Space
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (!isSpeaking) return;
+      if (e.code === "Escape" || e.code === "Space") {
+        e.preventDefault();
+        handleStop();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isSpeaking]);
 
   return (
     <div className="flex flex-col gap-4 w-1/4 p-4 box-border h-full">
@@ -115,6 +136,18 @@ const LeftPanel = () => {
           </div>
         )}
       </div>
+
+      {isSpeaking && (
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm text-gray-500">Speaking…</span>
+          <button
+            onClick={handleStop}
+            className="px-3 py-1 text-sm text-white bg-red-500 rounded"
+          >
+            Stop
+          </button>
+        </div>
+      )}
 
       {/* Toggle Mode Switch */}
       <div className="flex justify-center">
