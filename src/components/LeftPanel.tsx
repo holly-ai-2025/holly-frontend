@@ -3,6 +3,7 @@ import MessageStream from "./MessageStream";
 import InputBox from "./InputBox";
 import hollyLogo from "../assets/logo.png";
 import useVoiceRecorder from "../hooks/useVoiceRecorder";
+import { fetchLLMResponse } from "../api/llm";
 
 interface Message {
   role: "user" | "assistant";
@@ -23,14 +24,24 @@ const LeftPanel = () => {
 
     setIsThinking(true);
 
-    setTimeout(() => {
-      const hollyReply = {
-        role: "assistant",
-        content: "Holly here — test reply",
-      };
-      setMessages((prev) => [...prev, hollyReply]);
-      setIsThinking(false);
-    }, 1000);
+    fetchLLMResponse(input)
+      .then((reply) => {
+        const hollyReply = {
+          role: "assistant" as const,
+          content: reply,
+        };
+        setMessages((prev) => [...prev, hollyReply]);
+      })
+      .catch(() => {
+        const hollyReply = {
+          role: "assistant" as const,
+          content: "Sorry, something went wrong.",
+        };
+        setMessages((prev) => [...prev, hollyReply]);
+      })
+      .finally(() => {
+        setIsThinking(false);
+      });
   };
 
   const toggleMode = () => {
