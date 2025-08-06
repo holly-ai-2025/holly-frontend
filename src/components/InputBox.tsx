@@ -10,6 +10,7 @@ const InputBox = ({ onSend, onStop }: Props) => {
 
   const handleSend = () => {
     if (!input.trim()) return;
+    onStop?.();
     onSend(input);
     setInput("");
   };
