@@ -2,9 +2,10 @@ import { useState } from "react";
 
 interface Props {
   onSend: (message: string) => void;
+  onStop?: () => void;
 }
 
-const InputBox = ({ onSend }: Props) => {
+const InputBox = ({ onSend, onStop }: Props) => {
   const [input, setInput] = useState("");
 
   const handleSend = () => {
@@ -19,7 +20,10 @@ const InputBox = ({ onSend }: Props) => {
         type="text"
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleSend()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") handleSend();
+          if (e.key === "Escape") onStop?.();
+        }}
         placeholder="Talk to Holly..."
         className="flex-1 border border-light-purple rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medium-purple"
       />
