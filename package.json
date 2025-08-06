@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "launch": "node launch-dev.js"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
