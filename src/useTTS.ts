@@ -48,7 +48,13 @@ export function useTTS() {
     setIsPaused(false);
 
     mediaSource.addEventListener("sourceopen", async () => {
-      const sourceBuffer = mediaSource.addSourceBuffer("audio/mpeg");
+      const mime = "audio/mpeg";
+      if (!MediaSource.isTypeSupported(mime)) {
+        console.error("Unsupported MIME type", mime);
+        cleanup();
+        return;
+      }
+      const sourceBuffer = mediaSource.addSourceBuffer(mime);
       sourceBufferRef.current = sourceBuffer;
 
       try {
@@ -80,10 +86,20 @@ export function useTTS() {
             }
             if (value) {
               await new Promise<void>((resolve) => {
-                sourceBuffer.addEventListener("updateend", () => resolve(), {
-                  once: true,
-                });
-                sourceBuffer.appendBuffer(value);
+                const appendChunk = () => {
+                  sourceBuffer.addEventListener("updateend", () => resolve(), {
+                    once: true,
+                  });
+                  sourceBuffer.appendBuffer(value);
+                };
+
+                if (sourceBuffer.updating) {
+                  sourceBuffer.addEventListener("updateend", appendChunk, {
+                    once: true,
+                  });
+                } else {
+                  appendChunk();
+                }
               });
             }
           }
