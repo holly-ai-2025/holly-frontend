@@ -1,4 +1,3 @@
-import React from "react";
 import LeftPanel from "./components/LeftPanel";
 import MainWindow from "./components/MainWindow";
 import RightBar from "./components/RightBar";
