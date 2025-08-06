@@ -11,7 +11,15 @@ export const fetchLLMResponse = async (prompt: string): Promise<string> => {
     throw new Error("Failed to fetch LLM response");
   }
 
-  const data = await response.json();
-  return data.message || "";
+  const data: any = await response.json();
+
+  // Support common LLM response shapes
+  return (
+    data?.choices?.[0]?.message?.content || // OpenAI-style chat completion
+    data?.choices?.[0]?.text || // Completion APIs
+    data?.message ||
+    data?.response ||
+    JSON.stringify(data)
+  );
 };
 
