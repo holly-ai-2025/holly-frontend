@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import MessageStream from "./MessageStream";
 import InputBox from "./InputBox";
-import hollyLogo from "../assets/logo.png";
+import hollyLogo from "../assets/Logo.png";
 import useVoiceRecorder from "../hooks/useVoiceRecorder";
 import { fetchLLMResponse } from "../api/llm";
 import { playVoice, stopVoice } from "../api/tts";
@@ -21,23 +21,23 @@ const LeftPanel = () => {
   const handleSend = (input: string) => {
     if (!input.trim()) return;
 
-    const userMessage = { role: "user", content: input };
+    const userMessage: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMessage]);
 
     setIsThinking(true);
 
     fetchLLMResponse(input)
       .then((reply) => {
-        const hollyReply = {
-          role: "assistant" as const,
+        const hollyReply: Message = {
+          role: "assistant",
           content: reply,
         };
         setMessages((prev) => [...prev, hollyReply]);
         playVoice(reply, () => setIsSpeaking(true), () => setIsSpeaking(false));
       })
       .catch(() => {
-        const hollyReply = {
-          role: "assistant" as const,
+        const hollyReply: Message = {
+          role: "assistant",
           content: "Sorry, something went wrong.",
         };
         setMessages((prev) => [...prev, hollyReply]);
