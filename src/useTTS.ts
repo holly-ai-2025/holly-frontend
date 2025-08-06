@@ -55,12 +55,12 @@ export function useTTS() {
         const response = await fetch(LLM_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, stream: true }),
           signal: controller.signal,
         });
 
         if (!response.ok || !response.body) {
-          throw new Error("TTS request failed");
+          throw new Error("LLM request failed");
         }
 
         const reader = response.body.getReader();

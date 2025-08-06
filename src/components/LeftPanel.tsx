@@ -4,7 +4,7 @@ import InputBox from "./InputBox";
 import hollyLogo from "../assets/Logo.png";
 import useVoiceRecorder from "../hooks/useVoiceRecorder";
 import { fetchLLMResponse } from "../api/llm";
-import { playVoice, stopVoice } from "../api/tts";
+import { useTTS } from "../useTTS";
 
 interface Message {
   role: "user" | "assistant";
@@ -15,7 +15,7 @@ const LeftPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [mode, setMode] = useState<"text" | "voice">("text");
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const { speak, stop, isSpeaking } = useTTS();
 
   // Handle STT return → same handler as text input
   const handleSend = (input: string) => {
@@ -24,6 +24,8 @@ const LeftPanel = () => {
     const userMessage: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMessage]);
 
+    stop();
+    speak(input);
     setIsThinking(true);
 
     fetchLLMResponse(input)
@@ -33,7 +35,6 @@ const LeftPanel = () => {
           content: reply,
         };
         setMessages((prev) => [...prev, hollyReply]);
-        playVoice(reply, () => setIsSpeaking(true), () => setIsSpeaking(false));
       })
       .catch(() => {
         const hollyReply: Message = {
@@ -52,8 +53,7 @@ const LeftPanel = () => {
   };
 
   const handleStop = () => {
-    stopVoice();
-    setIsSpeaking(false);
+    stop();
   };
 
   // Voice recorder setup (enabled only in voice mode)
@@ -128,7 +128,7 @@ const LeftPanel = () => {
 
         {mode === "text" ? (
           <div className="p-3 box-border">
-            <InputBox onSend={handleSend} />
+            <InputBox onSend={handleSend} onStop={handleStop} />
           </div>
         ) : (
           <div className="pb-3 px-4 text-center text-sm text-gray-500">
