@@ -69,7 +69,13 @@ export function useTTS() {
           throw new Error("LLM request failed");
         }
 
+        const contentType = response.headers.get("Content-Type") || "";
+        if (!contentType.includes("audio/mpeg")) {
+          throw new Error(`Invalid content-type: ${contentType}`);
+        }
+
         const reader = response.body.getReader();
+        let started = false;
         const pump = async (): Promise<void> => {
           while (true) {
             const { value, done } = await reader.read();
@@ -85,12 +91,16 @@ export function useTTS() {
               break;
             }
             if (value) {
-              await new Promise<void>((resolve) => {
+              await new Promise<void>((resolve, reject) => {
                 const appendChunk = () => {
                   sourceBuffer.addEventListener("updateend", () => resolve(), {
                     once: true,
                   });
-                  sourceBuffer.appendBuffer(value);
+                  try {
+                    sourceBuffer.appendBuffer(value);
+                  } catch (err) {
+                    reject(err);
+                  }
                 };
 
                 if (sourceBuffer.updating) {
@@ -101,6 +111,15 @@ export function useTTS() {
                   appendChunk();
                 }
               });
+
+              if (!started) {
+                try {
+                  await audioRef.current!.play();
+                  started = true;
+                } catch (err) {
+                  throw err;
+                }
+              }
             }
           }
         };
@@ -116,13 +135,6 @@ export function useTTS() {
         cleanup();
       }
     });
-
-    try {
-      await audioRef.current!.play();
-    } catch (err) {
-      console.error(err);
-      cleanup();
-    }
   };
 
   const togglePause = () => {
