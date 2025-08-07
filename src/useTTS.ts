@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 
-const LLM_URL = "http://localhost:3001/llm";
+// Endpoint that accepts `{ text }` and streams back MP3 audio
+const TTS_URL = "/tts";
 
 export function useTTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -9,6 +10,8 @@ export function useTTS() {
   const controllerRef = useRef<AbortController | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Ensure single global Audio instance
   if (!audioRef.current) {
@@ -19,20 +22,24 @@ export function useTTS() {
     controllerRef.current?.abort();
     controllerRef.current = null;
     if (audioRef.current) {
+      const src = audioRef.current.src;
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
+      if (src) URL.revokeObjectURL(src);
     }
     mediaSourceRef.current = null;
     sourceBufferRef.current = null;
     setIsSpeaking(false);
     setIsPaused(false);
+    setIsLoading(false);
+    setError(null);
   };
 
   const stop = () => {
     cleanup();
   };
 
-  const speak = async (prompt: string) => {
+  const speak = async (text: string) => {
     // Interrupt any current playback
     stop();
 
@@ -46,33 +53,36 @@ export function useTTS() {
 
     setIsSpeaking(true);
     setIsPaused(false);
+    setIsLoading(true);
+    setError(null);
 
     mediaSource.addEventListener("sourceopen", async () => {
       const mime = "audio/mpeg";
       if (!MediaSource.isTypeSupported(mime)) {
-        console.error("Unsupported MIME type", mime);
+        const errMsg = `Unsupported MIME type ${mime}`;
+        console.error(errMsg);
+        setError(errMsg);
         cleanup();
         return;
       }
       try {
-        const response = await fetch(LLM_URL, {
+        const response = await fetch(TTS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, stream: true }),
+          body: JSON.stringify({ text }),
           signal: controller.signal,
         });
 
         if (!response.ok || !response.body) {
-          throw new Error("LLM request failed");
+          throw new Error("TTS request failed");
         }
 
         const contentType = response.headers.get("Content-Type") || "";
         if (!contentType.includes("audio/mpeg")) {
           const errorText = await response.text().catch(() => "");
-          console.error(
-            `TTS error: expected audio/mpeg but received ${contentType}`,
-            errorText,
-          );
+          const errMsg = `TTS error: expected audio/mpeg but received ${contentType}`;
+          console.error(errMsg, errorText);
+          setError(errMsg);
           cleanup();
           return;
         }
@@ -94,6 +104,7 @@ export function useTTS() {
               });
               mediaSource.endOfStream();
               setIsSpeaking(false);
+              setIsLoading(false);
               break;
             }
             if (value) {
@@ -122,6 +133,7 @@ export function useTTS() {
                 try {
                   await audioRef.current!.play();
                   started = true;
+                  setIsLoading(false);
                 } catch (err) {
                   throw err;
                 }
@@ -133,11 +145,13 @@ export function useTTS() {
         pump().catch((err) => {
           if (controller.signal.aborted) return; // normal abort
           console.error(err);
+          setError((err as Error).message);
           cleanup();
         });
       } catch (err) {
         if (controller.signal.aborted) return; // ignore abort errors
         console.error(err);
+        setError((err as Error).message);
         cleanup();
       }
     });
@@ -158,5 +172,5 @@ export function useTTS() {
     return () => cleanup();
   }, []);
 
-  return { speak, stop, togglePause, isSpeaking, isPaused };
+  return { speak, stop, togglePause, isSpeaking, isPaused, isLoading, error };
 }

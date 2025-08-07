@@ -15,7 +15,7 @@ const LeftPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [mode, setMode] = useState<"text" | "voice">("text");
-  const { speak, stop, isSpeaking } = useTTS();
+  const { speak, stop, isSpeaking, isLoading, error } = useTTS();
 
   // Handle STT return → same handler as text input
   const handleSend = (input: string) => {
@@ -25,7 +25,6 @@ const LeftPanel = () => {
     setMessages((prev) => [...prev, userMessage]);
 
     stop();
-    speak(input);
     setIsThinking(true);
 
     fetchLLMResponse(input)
@@ -35,6 +34,7 @@ const LeftPanel = () => {
           content: reply,
         };
         setMessages((prev) => [...prev, hollyReply]);
+        speak(reply);
       })
       .catch(() => {
         const hollyReply: Message = {
@@ -137,7 +137,17 @@ const LeftPanel = () => {
         )}
       </div>
 
-      {isSpeaking && (
+      {isLoading && (
+        <div className="flex items-center justify-center text-sm text-gray-500">
+          Loading speech…
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center justify-center text-sm text-red-600">
+          {error}
+        </div>
+      )}
+      {isSpeaking && !isLoading && (
         <div className="flex items-center justify-center gap-2">
           <span className="text-sm text-gray-500">Speaking…</span>
           <button
