@@ -144,7 +144,7 @@ const LeftPanel = () => {
       )}
       {error && (
         <div className="flex items-center justify-center text-sm text-red-600">
-          {error}
+          Speech unavailable: {error}
         </div>
       )}
       {isSpeaking && !isLoading && (
