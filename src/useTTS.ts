@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // Backend endpoint that returns an MP3 stream for the provided prompt
-const TTS_URL = "http://localhost:3001/tts";
+// Prefer an environment variable so deployments can configure the API base
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.hollyai.xyz";
+const TTS_URL = `${API_BASE_URL}/tts`;
 
 /**
  * Simple hook to turn text into speech using the backend TTS service.
@@ -49,22 +51,40 @@ export function useTTS() {
         const res = await fetch(TTS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          mode: "cors",
           body: JSON.stringify({ prompt: text }),
         });
 
-        if (!res.ok) {
-          throw new Error(`TTS request failed: ${res.status} ${res.statusText}`);
+        const contentType = res.headers.get("content-type") || "";
+
+        if (res.ok && contentType.startsWith("audio")) {
+          const buffer = await res.arrayBuffer();
+          const blob = new Blob([buffer], { type: contentType });
+          const url = URL.createObjectURL(blob);
+
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          audio.onended = cleanup;
+          await audio.play();
+          setIsSpeaking(true);
+        } else {
+          let message = `TTS request failed: ${res.status} ${res.statusText}`;
+          try {
+            if (contentType.includes("application/json")) {
+              const data = await res.json();
+              console.error("TTS JSON error:", data);
+              message = data.error || data.message || message;
+            } else {
+              const text = await res.text();
+              console.error("TTS error:", text);
+              if (text) message = text;
+            }
+          } catch (parseErr) {
+            console.error("TTS parse error:", parseErr);
+          }
+          setError(message);
+          cleanup();
         }
-
-        const buffer = await res.arrayBuffer();
-        const blob = new Blob([buffer], { type: "audio/mpeg" });
-        const url = URL.createObjectURL(blob);
-
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = cleanup;
-        await audio.play();
-        setIsSpeaking(true);
       } catch (err) {
         console.error("TTS Error:", err);
         setError((err as Error).message);
