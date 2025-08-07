@@ -71,7 +71,13 @@ export function useTTS() {
 
         const contentType = response.headers.get("Content-Type") || "";
         if (!contentType.includes("audio/mpeg")) {
-          throw new Error(`Invalid content-type: ${contentType}`);
+          const errorText = await response.text().catch(() => "");
+          console.error(
+            `TTS error: expected audio/mpeg but received ${contentType}`,
+            errorText,
+          );
+          cleanup();
+          return;
         }
 
         const reader = response.body.getReader();
