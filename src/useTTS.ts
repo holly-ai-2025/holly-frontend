@@ -54,9 +54,6 @@ export function useTTS() {
         cleanup();
         return;
       }
-      const sourceBuffer = mediaSource.addSourceBuffer(mime);
-      sourceBufferRef.current = sourceBuffer;
-
       try {
         const response = await fetch(LLM_URL, {
           method: "POST",
@@ -79,6 +76,9 @@ export function useTTS() {
           cleanup();
           return;
         }
+
+        const sourceBuffer = mediaSource.addSourceBuffer(mime);
+        sourceBufferRef.current = sourceBuffer;
 
         const reader = response.body.getReader();
         let started = false;
