@@ -1,176 +1,97 @@
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-// Endpoint that accepts `{ text }` and streams back MP3 audio
-const TTS_URL = "/tts";
+// Backend endpoint that returns an MP3 stream for the provided prompt
+const TTS_URL = "http://localhost:3001/tts";
 
+/**
+ * Simple hook to turn text into speech using the backend TTS service.
+ *
+ * It exposes a `speak` function which sends the text to the backend and
+ * plays the returned audio.  Callers can also stop or pause playback and
+ * observe loading/error state.
+ */
 export function useTTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const mediaSourceRef = useRef<MediaSource | null>(null);
-  const sourceBufferRef = useRef<SourceBuffer | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Ensure single global Audio instance
-  if (!audioRef.current) {
-    audioRef.current = new Audio();
-  }
-
-  const cleanup = () => {
-    controllerRef.current?.abort();
-    controllerRef.current = null;
-    if (audioRef.current) {
-      const src = audioRef.current.src;
-      audioRef.current.pause();
-      audioRef.current.removeAttribute("src");
-      if (src) URL.revokeObjectURL(src);
+  const cleanup = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      if (audio.src) {
+        URL.revokeObjectURL(audio.src);
+        audio.removeAttribute("src");
+      }
     }
-    mediaSourceRef.current = null;
-    sourceBufferRef.current = null;
+    audioRef.current = null;
     setIsSpeaking(false);
     setIsPaused(false);
-    setIsLoading(false);
-    setError(null);
-  };
+  }, []);
 
-  const stop = () => {
+  const stop = useCallback(() => {
     cleanup();
-  };
+  }, [cleanup]);
 
-  const speak = async (text: string) => {
-    // Interrupt any current playback
-    stop();
+  const speak = useCallback(
+    async (text: string) => {
+      if (!text.trim()) return;
 
-    const controller = new AbortController();
-    controllerRef.current = controller;
+      // Interrupt any existing playback
+      stop();
 
-    const mediaSource = new MediaSource();
-    mediaSourceRef.current = mediaSource;
+      setIsLoading(true);
+      setError(null);
 
-    audioRef.current!.src = URL.createObjectURL(mediaSource);
-
-    setIsSpeaking(true);
-    setIsPaused(false);
-    setIsLoading(true);
-    setError(null);
-
-    mediaSource.addEventListener("sourceopen", async () => {
-      const mime = "audio/mpeg";
-      if (!MediaSource.isTypeSupported(mime)) {
-        const errMsg = `Unsupported MIME type ${mime}`;
-        console.error(errMsg);
-        setError(errMsg);
-        cleanup();
-        return;
-      }
       try {
-        const response = await fetch(TTS_URL, {
+        const res = await fetch(TTS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-          signal: controller.signal,
+          body: JSON.stringify({ prompt: text }),
         });
 
-        if (!response.ok || !response.body) {
-          throw new Error("TTS request failed");
+        if (!res.ok) {
+          throw new Error(`TTS request failed: ${res.status} ${res.statusText}`);
         }
 
-        const contentType = response.headers.get("Content-Type") || "";
-        if (!contentType.includes("audio/mpeg")) {
-          const errorText = await response.text().catch(() => "");
-          const errMsg = `TTS error: expected audio/mpeg but received ${contentType}`;
-          console.error(errMsg, errorText);
-          setError(errMsg);
-          cleanup();
-          return;
-        }
+        const buffer = await res.arrayBuffer();
+        const blob = new Blob([buffer], { type: "audio/mpeg" });
+        const url = URL.createObjectURL(blob);
 
-        const sourceBuffer = mediaSource.addSourceBuffer(mime);
-        sourceBufferRef.current = sourceBuffer;
-
-        const reader = response.body.getReader();
-        let started = false;
-        const pump = async (): Promise<void> => {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) {
-              await new Promise<void>((resolve) => {
-                if (!sourceBuffer.updating) return resolve();
-                sourceBuffer.addEventListener("updateend", () => resolve(), {
-                  once: true,
-                });
-              });
-              mediaSource.endOfStream();
-              setIsSpeaking(false);
-              setIsLoading(false);
-              break;
-            }
-            if (value) {
-              await new Promise<void>((resolve, reject) => {
-                const appendChunk = () => {
-                  sourceBuffer.addEventListener("updateend", () => resolve(), {
-                    once: true,
-                  });
-                  try {
-                    sourceBuffer.appendBuffer(value);
-                  } catch (err) {
-                    reject(err);
-                  }
-                };
-
-                if (sourceBuffer.updating) {
-                  sourceBuffer.addEventListener("updateend", appendChunk, {
-                    once: true,
-                  });
-                } else {
-                  appendChunk();
-                }
-              });
-
-              if (!started) {
-                try {
-                  await audioRef.current!.play();
-                  started = true;
-                  setIsLoading(false);
-                } catch (err) {
-                  throw err;
-                }
-              }
-            }
-          }
-        };
-
-        pump().catch((err) => {
-          if (controller.signal.aborted) return; // normal abort
-          console.error(err);
-          setError((err as Error).message);
-          cleanup();
-        });
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = cleanup;
+        await audio.play();
+        setIsSpeaking(true);
       } catch (err) {
-        if (controller.signal.aborted) return; // ignore abort errors
-        console.error(err);
+        console.error("TTS Error:", err);
         setError((err as Error).message);
         cleanup();
+      } finally {
+        setIsLoading(false);
       }
-    });
-  };
+    },
+    [cleanup, stop]
+  );
 
-  const togglePause = () => {
-    if (!audioRef.current) return;
-    if (audioRef.current.paused) {
-      audioRef.current.play();
+  const togglePause = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play();
       setIsPaused(false);
     } else {
-      audioRef.current.pause();
+      audio.pause();
       setIsPaused(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
     return () => cleanup();
-  }, []);
+  }, [cleanup]);
 
   return { speak, stop, togglePause, isSpeaking, isPaused, isLoading, error };
 }
+
