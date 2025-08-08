@@ -60,19 +60,20 @@ export function useTTS() {
         if (!res.ok) {
           let message = `TTS request failed: ${res.status}`;
           try {
-            const data = await res.json();
-            console.log({ stage: data.stage, error: data.error, status: res.status });
-            message = data.error || data.message || message;
-          } catch (jsonErr) {
-            console.log({ stage: "json", error: (jsonErr as Error).message, status: res.status });
+            const errBuf = await res.arrayBuffer();
+            const errText = new TextDecoder().decode(errBuf);
+            console.log({ stage: "error", error: errText, status: res.status });
+            if (errText) message = errText;
+          } catch (parseErr) {
+            console.log({ stage: "parse", error: (parseErr as Error).message, status: res.status });
           }
           throw new Error(message);
         }
 
         const ct = res.headers.get("content-type") || "audio/wav";
-        const buf = await res.arrayBuffer();
-        const blob = new Blob([buf], { type: ct });
-        const url = URL.createObjectURL(blob);
+        const blob = await res.blob();
+        const audioBlob = new Blob([blob], { type: ct });
+        const url = URL.createObjectURL(audioBlob);
 
         const audio = document.createElement("audio");
         audio.src = url;
