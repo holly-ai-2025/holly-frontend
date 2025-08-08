@@ -6,7 +6,7 @@ import InputBox from "./components/InputBox";
 import { useTTS } from "./useTTS";
 
 const App = () => {
-  const { speak, stop, togglePause, isSpeaking } = useTTS();
+  const { speak, stop, togglePause, isSpeaking, error } = useTTS();
 
   const handleSend = (message: string) => {
     speak(message);
@@ -38,6 +38,9 @@ const App = () => {
                 Stop
               </button>
             </div>
+          )}
+          {error && (
+            <div className="text-sm text-red-600">Speech unavailable: {error}</div>
           )}
           <InputBox onSend={handleSend} onStop={stop} />
         </div>
