@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // Backend endpoint that returns an MP3 stream for the provided text
 // Prefer an environment variable so deployments can configure the API base
-const TTS_URL = import.meta.env.VITE_TTS_URL || "https://api.hollyai.xyz/tts";
+export const TTS_URL =
+  import.meta.env.VITE_TTS_URL || "https://api.hollyai.xyz/tts";
 const ENABLE_FALLBACK =
   import.meta.env.VITE_ENABLE_TTS_FALLBACK === "true";
 
@@ -56,36 +57,32 @@ export function useTTS() {
           body: JSON.stringify({ text, stream: false }),
         });
 
-        const contentType = res.headers.get("content-type") || "";
-
-        if (res.ok && contentType.startsWith("audio")) {
-          const buffer = await res.arrayBuffer();
-          const blob = new Blob([buffer], { type: contentType });
-          const url = URL.createObjectURL(blob);
-
-          const audio = new Audio(url);
-          audioRef.current = audio;
-          audio.onended = cleanup;
-          await audio.play();
-          setIsSpeaking(true);
-        } else {
-          let message = `TTS request failed: ${res.status} ${res.statusText}`;
+        if (!res.ok) {
+          let message = `TTS request failed: ${res.status}`;
           try {
-            if (contentType.includes("application/json")) {
-              const data = await res.json();
-              console.error("TTS JSON error:", data);
-              message =
-                data.error || data.stage || data.stderr || data.message || message;
-            } else {
-              const text = await res.text();
-              console.error("TTS error:", text);
-              if (text) message = text;
-            }
-          } catch (parseErr) {
-            console.error("TTS parse error:", parseErr);
+            const data = await res.json();
+            console.log({ stage: data.stage, error: data.error, status: res.status });
+            message = data.error || data.message || message;
+          } catch (jsonErr) {
+            console.log({ stage: "json", error: (jsonErr as Error).message, status: res.status });
           }
           throw new Error(message);
         }
+
+        const ct = res.headers.get("content-type") || "audio/wav";
+        const buf = await res.arrayBuffer();
+        const blob = new Blob([buf], { type: ct });
+        const url = URL.createObjectURL(blob);
+
+        const audio = document.createElement("audio");
+        audio.src = url;
+        audioRef.current = audio;
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          cleanup();
+        };
+        await audio.play();
+        setIsSpeaking(true);
       } catch (err) {
         console.error("TTS Error:", err);
         const message = (err as Error).message;
