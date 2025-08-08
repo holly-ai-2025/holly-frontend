@@ -52,7 +52,7 @@ export function useTTS() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify({ prompt: text }),
+          body: JSON.stringify({ prompt: text, stream: true }),
         });
 
         const contentType = res.headers.get("content-type") || "";
