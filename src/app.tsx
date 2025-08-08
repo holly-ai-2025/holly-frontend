@@ -3,10 +3,31 @@ import LeftPanel from "./components/LeftPanel";
 import MainWindow from "./components/MainWindow";
 import RightBar from "./components/RightBar";
 import InputBox from "./components/InputBox";
-import { useTTS } from "./useTTS";
+import { useTTS, TTS_URL } from "./useTTS";
 
 const App = () => {
   const { speak, stop, togglePause, isSpeaking, error } = useTTS();
+
+  let selfTestJson: (() => Promise<void>) | undefined;
+  let selfTestAudio: (() => Promise<void>) | undefined;
+  if (import.meta.env.DEV) {
+    const base = TTS_URL.replace(/\/tts$/, "");
+    selfTestJson = async () => {
+      const res = await fetch(`${base}/tts/selftest-json`);
+      console.log(await res.json());
+    };
+    selfTestAudio = async () => {
+      const res = await fetch(`${base}/tts/selftest-text`);
+      const ct = res.headers.get("content-type") || "audio/wav";
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: ct });
+      const url = URL.createObjectURL(blob);
+      const audio = document.createElement("audio");
+      audio.src = url;
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    };
+  }
 
   const handleSend = (message: string) => {
     speak(message);
@@ -43,6 +64,16 @@ const App = () => {
             <div className="text-sm text-red-600">Speech unavailable: {error}</div>
           )}
           <InputBox onSend={handleSend} onStop={stop} />
+          {import.meta.env.DEV && (
+            <div className="flex gap-2 text-xs">
+              <button onClick={() => selfTestJson?.()} className="underline">
+                selftest-json
+              </button>
+              <button onClick={() => selfTestAudio?.()} className="underline">
+                selftest-audio
+              </button>
+            </div>
+          )}
         </div>
       </main>
       <RightBar />
