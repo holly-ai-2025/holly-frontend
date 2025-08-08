@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // Backend endpoint that returns an MP3 stream for the provided prompt
 // Prefer an environment variable so deployments can configure the API base
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.hollyai.xyz";
-const TTS_URL = `${API_BASE_URL}/tts`;
+const TTS_URL = import.meta.env.VITE_TTS_URL || "https://api.hollyai.xyz/tts";
+const ENABLE_FALLBACK =
+  import.meta.env.VITE_ENABLE_TTS_FALLBACK === "true";
 
 /**
  * Simple hook to turn text into speech using the backend TTS service.
@@ -52,7 +53,7 @@ export function useTTS() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify({ prompt: text, stream: true }),
+          body: JSON.stringify({ prompt: text, stream: false }),
         });
 
         const contentType = res.headers.get("content-type") || "";
@@ -73,7 +74,8 @@ export function useTTS() {
             if (contentType.includes("application/json")) {
               const data = await res.json();
               console.error("TTS JSON error:", data);
-              message = data.error || data.message || message;
+              message =
+                data.error || data.stage || data.stderr || data.message || message;
             } else {
               const text = await res.text();
               console.error("TTS error:", text);
@@ -82,12 +84,27 @@ export function useTTS() {
           } catch (parseErr) {
             console.error("TTS parse error:", parseErr);
           }
-          setError(message);
-          cleanup();
+          throw new Error(message);
         }
       } catch (err) {
         console.error("TTS Error:", err);
-        setError((err as Error).message);
+        const message = (err as Error).message;
+        setError(message);
+        if (
+          ENABLE_FALLBACK &&
+          typeof window !== "undefined" &&
+          "speechSynthesis" in window
+        ) {
+          try {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.onend = cleanup;
+            speechSynthesis.speak(utterance);
+            setIsSpeaking(true);
+            return;
+          } catch (fallbackErr) {
+            console.error("speechSynthesis error:", fallbackErr);
+          }
+        }
         cleanup();
       } finally {
         setIsLoading(false);
