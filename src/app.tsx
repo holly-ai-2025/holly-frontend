@@ -19,9 +19,9 @@ const App = () => {
     selfTestAudio = async () => {
       const res = await fetch(`${base}/tts/selftest-text`);
       const ct = res.headers.get("content-type") || "audio/wav";
-      const buf = await res.arrayBuffer();
-      const blob = new Blob([buf], { type: ct });
-      const url = URL.createObjectURL(blob);
+      const blob = await res.blob();
+      const audioBlob = new Blob([blob], { type: ct });
+      const url = URL.createObjectURL(audioBlob);
       const audio = document.createElement("audio");
       audio.src = url;
       audio.onended = () => URL.revokeObjectURL(url);
