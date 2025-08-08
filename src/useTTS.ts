@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// Backend endpoint that returns an MP3 stream for the provided prompt
+// Backend endpoint that returns an MP3 stream for the provided text
 // Prefer an environment variable so deployments can configure the API base
 const TTS_URL = import.meta.env.VITE_TTS_URL || "https://api.hollyai.xyz/tts";
 const ENABLE_FALLBACK =
@@ -53,7 +53,7 @@ export function useTTS() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify({ prompt: text, stream: false }),
+          body: JSON.stringify({ text, stream: false }),
         });
 
         const contentType = res.headers.get("content-type") || "";
