@@ -15,7 +15,7 @@ const LeftPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [mode, setMode] = useState<"text" | "voice">("text");
-  const { speak, stop, isSpeaking, isLoading, error } = useTTS();
+  const { speak, stop, isSpeaking, isLoading } = useTTS();
 
   // Handle STT return → same handler as text input
   const handleSend = (input: string) => {
@@ -140,11 +140,6 @@ const LeftPanel = () => {
       {isLoading && (
         <div className="flex items-center justify-center text-sm text-gray-500">
           Loading speech…
-        </div>
-      )}
-      {error && (
-        <div className="flex items-center justify-center text-sm text-red-600">
-          Speech unavailable: {error}
         </div>
       )}
       {isSpeaking && !isLoading && (

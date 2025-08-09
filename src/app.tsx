@@ -4,9 +4,10 @@ import MainWindow from "./components/MainWindow";
 import RightBar from "./components/RightBar";
 import InputBox from "./components/InputBox";
 import { useTTS, TTS_URL } from "./useTTS";
+import Toast from "./components/Toast";
 
 const App = () => {
-  const { speak, stop, togglePause, isSpeaking, error } = useTTS();
+  const { speak, stop, togglePause, isSpeaking } = useTTS();
 
   let selfTestJson: (() => Promise<void>) | undefined;
   let selfTestAudio: (() => Promise<void>) | undefined;
@@ -60,9 +61,6 @@ const App = () => {
               </button>
             </div>
           )}
-          {error && (
-            <div className="text-sm text-red-600">Speech unavailable: {error}</div>
-          )}
           <InputBox onSend={handleSend} onStop={stop} />
           {import.meta.env.DEV && (
             <div className="flex gap-2 text-xs">
@@ -77,6 +75,7 @@ const App = () => {
         </div>
       </main>
       <RightBar />
+      <Toast />
     </div>
   );
 };
