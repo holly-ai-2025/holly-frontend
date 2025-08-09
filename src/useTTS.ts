@@ -134,81 +134,122 @@ export function useTTS() {
           throw new Error(errJson.error || `TTS request failed: ${res.status}`);
         }
 
-        // Streaming path — attempt chunked decode & schedule
-        const playStream = async (response: Response) => {
+        // Streaming path — parse framed mini-WAVs and schedule playback
+        const playFramedMiniWavs = async (response: Response) => {
           if (!response.body) throw new Error("No response body");
           const reader = response.body.getReader();
-          const ctx =
-            new (window.AudioContext ||
-              (window as any).webkitAudioContext)();
-          audioCtxRef.current = ctx;
+          const framing = response.headers.get("X-Stream-Framing") || "";
+          if (!framing.includes("wav-l32be")) {
+            // Not our framed protocol; fall back to blob.
+            throw new Error("Unframed stream");
+          }
 
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          audioCtxRef.current = ctx;
           let startTime = ctx.currentTime;
           let first = true;
           let lastSource: AudioBufferSourceNode | null = null;
 
+          // Reassembly buffers
+          let pending = new Uint8Array(0); // bytes we've read but not yet parsed
+          let needLen: number | null = null; // bytes remaining for current frame
+          let frameLen = 0; // length of the current frame
+
+          const concat = (a: Uint8Array, b: Uint8Array) => {
+            const out = new Uint8Array(a.length + b.length);
+            out.set(a, 0);
+            out.set(b, a.length);
+            return out;
+          };
+
+          const readExact = (src: Uint8Array, n: number) => {
+            return [src.slice(0, n), src.slice(n)] as const;
+          };
+
           return new Promise<void>((resolve, reject) => {
-            const read = () => {
+            const pump = () => {
               reader
                 .read()
                 .then(async ({ value, done }) => {
                   if (done) {
-                    if (lastSource) {
-                      lastSource.onended = () => cleanup();
-                    } else {
-                      cleanup();
-                    }
+                    if (lastSource) lastSource.onended = () => cleanup();
+                    else cleanup();
                     return;
                   }
-                  if (!value) {
-                    read();
-                    return;
-                  }
+                  pending = value ? concat(pending, value) : pending;
 
-                  // Try decoding this chunk. If it fails early, fall back below.
-                  let buf: AudioBuffer;
                   try {
-                    const chunk = value.buffer.slice(
-                      value.byteOffset,
-                      value.byteOffset + value.byteLength
-                    );
-                    buf = await ctx.decodeAudioData(chunk);
-                  } catch (e) {
-                    if (first) {
-                      reject(e); // trigger fallback-to-blob
-                      return;
-                    } else {
-                      console.warn("decode chunk failed", e);
-                      read();
-                      return;
+                    // parse as many frames as we can
+                    while (true) {
+                      if (needLen == null) {
+                        if (pending.length < 4) break; // need more bytes for length
+                        const [lenBytes, rest] = readExact(pending, 4);
+                        pending = rest;
+                        // big-endian u32
+                        frameLen =
+                          (lenBytes[0] << 24) |
+                          (lenBytes[1] << 16) |
+                          (lenBytes[2] << 8) |
+                          lenBytes[3];
+                        needLen = frameLen;
+                      }
+                      if (pending.length < needLen) break; // wait for full frame
+                      const [frameBytes, rest2] = readExact(pending, needLen);
+                      pending = rest2;
+                      needLen = null;
+
+                      // decode this complete mini-WAV
+                      let buf: AudioBuffer;
+                      try {
+                        // Important: slice to a standalone ArrayBuffer
+                        const frameCopy = frameBytes.slice().buffer;
+                        buf = await ctx.decodeAudioData(frameCopy);
+                      } catch (e) {
+                        // If first frame fails, bail to blob fallback
+                        if (first) {
+                          try {
+                            await reader.cancel();
+                          } catch {}
+                          try {
+                            await ctx.close();
+                          } catch {}
+                          reject(e);
+                          return;
+                        } else {
+                          console.warn("decode frame failed", e);
+                          continue;
+                        }
+                      }
+
+                      const source = ctx.createBufferSource();
+                      source.buffer = buf;
+                      source.connect(ctx.destination);
+                      source.start(startTime);
+                      startTime += buf.duration;
+                      lastSource = source;
+
+                      if (first) {
+                        setIsSpeaking(true);
+                        first = false;
+                        resolve();
+                      }
                     }
+                  } catch (e) {
+                    reject(e);
+                    return;
                   }
-
-                  const source = ctx.createBufferSource();
-                  source.buffer = buf;
-                  source.connect(ctx.destination);
-                  source.start(startTime);
-                  startTime += buf.duration;
-                  lastSource = source;
-
-                  if (first) {
-                    setIsSpeaking(true);
-                    first = false;
-                    resolve();
-                  }
-
-                  read();
+                  pump();
                 })
-                .catch((err) => reject(err));
+                .catch(reject);
             };
-            read();
+            pump();
           });
         };
 
         try {
-          await playStream(res.clone());
+          await playFramedMiniWavs(res.clone());
         } catch (streamErr) {
-          // Many browsers can't decode partial WAV chunks; fall back to whole blob.
+          // Fallback: whole-blob path (non-stream or debug endpoint)
           const ct = res.headers.get("content-type") || "audio/wav";
           const blob = await res.blob();
           const audioBlob = new Blob([blob], { type: ct });
