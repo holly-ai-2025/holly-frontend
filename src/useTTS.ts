@@ -20,12 +20,17 @@ const TTS_SUMMARIZE = import.meta.env.VITE_TTS_SUMMARIZE === "true";
  */
 export function useTTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cleanup = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -35,6 +40,16 @@ export function useTTS() {
       }
     }
     audioRef.current = null;
+
+    const ctx = audioCtxRef.current;
+    if (ctx) {
+      try {
+        ctx.close();
+      } catch (err) {
+        // ignore
+      }
+    }
+    audioCtxRef.current = null;
     setIsSpeaking(false);
     setIsPaused(false);
   }, []);
@@ -78,11 +93,14 @@ export function useTTS() {
       }
 
       try {
+        const controller = new AbortController();
+        abortRef.current = controller;
         const res = await fetch(TTS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           mode: "cors",
-          body: JSON.stringify({ text: ttsText, stream: false }),
+          body: JSON.stringify({ text: ttsText, stream: true }),
+          signal: controller.signal,
         });
 
         if (!res.ok) {
@@ -96,20 +114,87 @@ export function useTTS() {
           throw new Error(errJson.error || `TTS request failed: ${res.status}`);
         }
 
-        const ct = res.headers.get("content-type") || "audio/wav";
-        const blob = await res.blob();
-        const audioBlob = new Blob([blob], { type: ct });
-        const url = URL.createObjectURL(audioBlob);
+        const playStream = async (response: Response) => {
+          if (!response.body) throw new Error("No response body");
+          const reader = response.body.getReader();
+          const ctx = new (window.AudioContext ||
+            (window as any).webkitAudioContext)();
+          audioCtxRef.current = ctx;
+          let startTime = ctx.currentTime;
+          let first = true;
+          let lastSource: AudioBufferSourceNode | null = null;
 
-        const audio = document.createElement("audio");
-        audio.src = url;
-        audioRef.current = audio;
-        audio.onended = () => {
-          URL.revokeObjectURL(url);
-          cleanup();
+          return new Promise<void>((resolve, reject) => {
+            const read = () => {
+              reader
+                .read()
+                .then(async ({ value, done }) => {
+                  if (done) {
+                    if (lastSource) {
+                      lastSource.onended = () => cleanup();
+                    } else {
+                      cleanup();
+                    }
+                    return;
+                  }
+                  if (!value) {
+                    read();
+                    return;
+                  }
+                  let buf: AudioBuffer;
+                  try {
+                    const chunk = value.buffer.slice(
+                      value.byteOffset,
+                      value.byteOffset + value.byteLength
+                    );
+                    buf = await ctx.decodeAudioData(chunk);
+                  } catch (e) {
+                    if (first) {
+                      reject(e);
+                      return;
+                    } else {
+                      console.warn("decode chunk failed", e);
+                      read();
+                      return;
+                    }
+                  }
+                  const source = ctx.createBufferSource();
+                  source.buffer = buf;
+                  source.connect(ctx.destination);
+                  source.start(startTime);
+                  startTime += buf.duration;
+                  lastSource = source;
+                  if (first) {
+                    setIsSpeaking(true);
+                    first = false;
+                    resolve();
+                  }
+                  read();
+                })
+                .catch((err) => reject(err));
+            };
+            read();
+          });
         };
-        await audio.play();
-        setIsSpeaking(true);
+
+        try {
+          await playStream(res.clone());
+        } catch (streamErr) {
+          const ct = res.headers.get("content-type") || "audio/wav";
+          const blob = await res.blob();
+          const audioBlob = new Blob([blob], { type: ct });
+          const url = URL.createObjectURL(audioBlob);
+
+          const audio = document.createElement("audio");
+          audio.src = url;
+          audioRef.current = audio;
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            cleanup();
+          };
+          await audio.play();
+          setIsSpeaking(true);
+        }
       } catch (err) {
         console.error("TTS Error:", err);
         const message = (err as Error).message || "Voice timed out. Try again.";
@@ -141,6 +226,18 @@ export function useTTS() {
   );
 
   const togglePause = useCallback(() => {
+    const ctx = audioCtxRef.current;
+    if (ctx) {
+      if (ctx.state === "running") {
+        ctx.suspend();
+        setIsPaused(true);
+      } else {
+        ctx.resume();
+        setIsPaused(false);
+      }
+      return;
+    }
+
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
